@@ -1,7 +1,14 @@
 import Database, { Database as DatabaseType } from 'better-sqlite3';
 import path from 'path';
+import fs from 'fs';
 
-const dbPath = process.env.DB_PATH || path.join(__dirname, '../../data/flight_booking.db');
+const dbPath = process.env.DB_PATH || path.join(process.cwd(), 'data', 'flight_booking.db');
+
+// Tự tạo thư mục data nếu chưa tồn tại
+const dbDir = path.dirname(dbPath);
+if (!fs.existsSync(dbDir)) {
+  fs.mkdirSync(dbDir, { recursive: true });
+}
 
 const db: DatabaseType = new Database(dbPath);
 
