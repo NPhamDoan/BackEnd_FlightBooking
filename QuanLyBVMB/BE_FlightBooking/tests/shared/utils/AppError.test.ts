@@ -1,4 +1,4 @@
-import { AppError } from '../../src/utils/AppError';
+import { AppError } from '../../../src/shared/utils/AppError';
 
 describe('AppError', () => {
   it('should create an error with statusCode and message', () => {

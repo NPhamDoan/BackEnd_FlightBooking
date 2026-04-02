@@ -1,4 +1,4 @@
-import { generateBookingCode, generateTransactionCode } from '../../src/utils/helpers';
+import { generateBookingCode, generateTransactionCode } from '../../../src/shared/utils/helpers';
 
 describe('generateBookingCode', () => {
   it('should return an 8-character string', () => {
