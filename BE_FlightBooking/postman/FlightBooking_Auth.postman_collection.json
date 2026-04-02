@@ -1,0 +1,191 @@
+{
+  "info": {
+    "name": "Flight Booking - Auth",
+    "schema": "https://schema.getpostman.com/json/collection/v2.1.0/collection.json"
+  },
+  "variable": [
+    { "key": "baseUrl", "value": "http://localhost:4000" },
+    { "key": "token", "value": "" }
+  ],
+  "item": [
+    {
+      "name": "Health Check",
+      "event": [{ "listen": "test", "script": { "exec": [
+        "pm.test('Status 200', () => pm.response.to.have.status(200));",
+        "pm.test('Status ok', () => pm.expect(pm.response.json().status).to.eql('ok'));"
+      ]}}],
+      "request": {
+        "method": "GET",
+        "header": [],
+        "url": "{{baseUrl}}/api/health"
+      }
+    },
+    {
+      "name": "Register - Success",
+      "event": [{ "listen": "test", "script": { "exec": [
+        "if (pm.response.code === 201) {",
+        "  const res = pm.response.json();",
+        "  pm.collectionVariables.set('token', res.token);",
+        "  pm.test('Has token', () => pm.expect(res.token).to.be.a('string'));",
+        "  pm.test('Has user', () => pm.expect(res.user.email).to.eql('testpostman@example.com'));",
+        "}",
+        "pm.test('Status 201', () => pm.response.to.have.status(201));"
+      ]}}],
+      "request": {
+        "method": "POST",
+        "header": [{ "key": "Content-Type", "value": "application/json" }],
+        "url": "{{baseUrl}}/api/auth/register",
+        "body": { "mode": "raw", "raw": "{\n  \"email\": \"testpostman@example.com\",\n  \"password\": \"Test@1234\",\n  \"fullName\": \"Test Postman\",\n  \"phone\": \"0912345678\"\n}", "options": { "raw": { "language": "json" } } }
+      }
+    },
+    {
+      "name": "Register - Duplicate Email",
+      "event": [{ "listen": "test", "script": { "exec": [
+        "pm.test('Status 409', () => pm.response.to.have.status(409));"
+      ]}}],
+      "request": {
+        "method": "POST",
+        "header": [{ "key": "Content-Type", "value": "application/json" }],
+        "url": "{{baseUrl}}/api/auth/register",
+        "body": { "mode": "raw", "raw": "{\n  \"email\": \"testpostman@example.com\",\n  \"password\": \"Test@1234\",\n  \"fullName\": \"Test Postman\",\n  \"phone\": \"0912345678\"\n}", "options": { "raw": { "language": "json" } } }
+      }
+    },
+    {
+      "name": "Register - Invalid Password",
+      "event": [{ "listen": "test", "script": { "exec": [
+        "pm.test('Status 400', () => pm.response.to.have.status(400));",
+        "pm.test('Has errors', () => pm.expect(pm.response.json().errors).to.be.an('array'));"
+      ]}}],
+      "request": {
+        "method": "POST",
+        "header": [{ "key": "Content-Type", "value": "application/json" }],
+        "url": "{{baseUrl}}/api/auth/register",
+        "body": { "mode": "raw", "raw": "{\n  \"email\": \"weak@example.com\",\n  \"password\": \"weak1234\",\n  \"fullName\": \"Weak Pass\",\n  \"phone\": \"0912345678\"\n}", "options": { "raw": { "language": "json" } } }
+      }
+    },
+    {
+      "name": "Register - Invalid Phone",
+      "event": [{ "listen": "test", "script": { "exec": [
+        "pm.test('Status 400', () => pm.response.to.have.status(400));"
+      ]}}],
+      "request": {
+        "method": "POST",
+        "header": [{ "key": "Content-Type", "value": "application/json" }],
+        "url": "{{baseUrl}}/api/auth/register",
+        "body": { "mode": "raw", "raw": "{\n  \"email\": \"phone@example.com\",\n  \"password\": \"Test@1234\",\n  \"fullName\": \"Bad Phone\",\n  \"phone\": \"123456\"\n}", "options": { "raw": { "language": "json" } } }
+      }
+    },
+    {
+      "name": "Login - Admin",
+      "event": [{ "listen": "test", "script": { "exec": [
+        "const res = pm.response.json();",
+        "pm.collectionVariables.set('token', res.token);",
+        "pm.test('Status 200', () => pm.response.to.have.status(200));",
+        "pm.test('Has token', () => pm.expect(res.token).to.be.a('string'));",
+        "pm.test('Role admin', () => pm.expect(res.user.role).to.eql('admin'));"
+      ]}}],
+      "request": {
+        "method": "POST",
+        "header": [{ "key": "Content-Type", "value": "application/json" }],
+        "url": "{{baseUrl}}/api/auth/login",
+        "body": { "mode": "raw", "raw": "{\n  \"email\": \"admin@flightbooking.local\",\n  \"password\": \"Admin@123\"\n}", "options": { "raw": { "language": "json" } } }
+      }
+    },
+    {
+      "name": "Login - Customer",
+      "event": [{ "listen": "test", "script": { "exec": [
+        "const res = pm.response.json();",
+        "pm.collectionVariables.set('token', res.token);",
+        "pm.test('Status 200', () => pm.response.to.have.status(200));",
+        "pm.test('Role customer', () => pm.expect(res.user.role).to.eql('customer'));"
+      ]}}],
+      "request": {
+        "method": "POST",
+        "header": [{ "key": "Content-Type", "value": "application/json" }],
+        "url": "{{baseUrl}}/api/auth/login",
+        "body": { "mode": "raw", "raw": "{\n  \"email\": \"nguyenvana@example.local\",\n  \"password\": \"Customer@123\"\n}", "options": { "raw": { "language": "json" } } }
+      }
+    },
+    {
+      "name": "Login - Wrong Password",
+      "event": [{ "listen": "test", "script": { "exec": [
+        "pm.test('Status 401', () => pm.response.to.have.status(401));"
+      ]}}],
+      "request": {
+        "method": "POST",
+        "header": [{ "key": "Content-Type", "value": "application/json" }],
+        "url": "{{baseUrl}}/api/auth/login",
+        "body": { "mode": "raw", "raw": "{\n  \"email\": \"admin@flightbooking.local\",\n  \"password\": \"WrongPass123\"\n}", "options": { "raw": { "language": "json" } } }
+      }
+    },
+    {
+      "name": "Login - Email Not Found",
+      "event": [{ "listen": "test", "script": { "exec": [
+        "pm.test('Status 401', () => pm.response.to.have.status(401));"
+      ]}}],
+      "request": {
+        "method": "POST",
+        "header": [{ "key": "Content-Type", "value": "application/json" }],
+        "url": "{{baseUrl}}/api/auth/login",
+        "body": { "mode": "raw", "raw": "{\n  \"email\": \"notexist@example.com\",\n  \"password\": \"Test@1234\"\n}", "options": { "raw": { "language": "json" } } }
+      }
+    },
+    {
+      "name": "Get Profile - With Token",
+      "event": [{ "listen": "test", "script": { "exec": [
+        "pm.test('Status 200', () => pm.response.to.have.status(200));",
+        "pm.test('Has user', () => {",
+        "  const res = pm.response.json();",
+        "  pm.expect(res.user).to.have.property('email');",
+        "  pm.expect(res.user).to.not.have.property('password_hash');",
+        "});"
+      ]}}],
+      "request": {
+        "method": "GET",
+        "header": [{ "key": "Authorization", "value": "Bearer {{token}}" }],
+        "url": "{{baseUrl}}/api/auth/profile"
+      }
+    },
+    {
+      "name": "Get Profile - No Token",
+      "event": [{ "listen": "test", "script": { "exec": [
+        "pm.test('Status 401', () => pm.response.to.have.status(401));"
+      ]}}],
+      "request": {
+        "method": "GET",
+        "header": [],
+        "url": "{{baseUrl}}/api/auth/profile"
+      }
+    },
+    {
+      "name": "Change Password - Success",
+      "event": [{ "listen": "test", "script": { "exec": [
+        "pm.test('Status 200', () => pm.response.to.have.status(200));"
+      ]}}],
+      "request": {
+        "method": "PUT",
+        "header": [
+          { "key": "Content-Type", "value": "application/json" },
+          { "key": "Authorization", "value": "Bearer {{token}}" }
+        ],
+        "url": "{{baseUrl}}/api/auth/change-password",
+        "body": { "mode": "raw", "raw": "{\n  \"currentPassword\": \"Customer@123\",\n  \"newPassword\": \"NewPass@123\"\n}", "options": { "raw": { "language": "json" } } }
+      }
+    },
+    {
+      "name": "Change Password - Wrong Current",
+      "event": [{ "listen": "test", "script": { "exec": [
+        "pm.test('Status 400', () => pm.response.to.have.status(400));"
+      ]}}],
+      "request": {
+        "method": "PUT",
+        "header": [
+          { "key": "Content-Type", "value": "application/json" },
+          { "key": "Authorization", "value": "Bearer {{token}}" }
+        ],
+        "url": "{{baseUrl}}/api/auth/change-password",
+        "body": { "mode": "raw", "raw": "{\n  \"currentPassword\": \"WrongCurrent@1\",\n  \"newPassword\": \"NewPass@123\"\n}", "options": { "raw": { "language": "json" } } }
+      }
+    }
+  ]
+}
