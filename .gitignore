@@ -1,6 +1,5 @@
 node_modules/
 data/
 .env
-.kiro/
 dist/
 *.db
