@@ -2,8 +2,8 @@ import { Request, Response, NextFunction } from 'express';
 import bcrypt from 'bcryptjs';
 import jwt from 'jsonwebtoken';
 import db from '../config/database';
-import { AppError } from '../utils/AppError';
-import { RegisterRequest, LoginRequest, ChangePasswordRequest, UserProfile, JwtPayload } from '../types/auth.types';
+import { AppError } from '../shared/utils/AppError';
+import { RegisterRequest, LoginRequest, ChangePasswordRequest, UserProfile, JwtPayload } from './auth.types';
 
 const JWT_SECRET = process.env.JWT_SECRET || 'default-secret';
 
