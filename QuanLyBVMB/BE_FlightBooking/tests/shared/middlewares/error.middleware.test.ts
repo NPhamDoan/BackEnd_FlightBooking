@@ -1,6 +1,6 @@
 import { Request, Response, NextFunction } from 'express';
-import { errorHandler } from '../../src/middlewares/error.middleware';
-import { AppError } from '../../src/utils/AppError';
+import { errorHandler } from '../../../src/shared/middlewares/error.middleware';
+import { AppError } from '../../../src/shared/utils/AppError';
 
 function mockRes() {
   const res: Partial<Response> = {};
