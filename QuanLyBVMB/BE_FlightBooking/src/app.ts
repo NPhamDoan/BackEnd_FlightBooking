@@ -3,8 +3,8 @@ import cors from 'cors';
 import helmet from 'helmet';
 import rateLimit from 'express-rate-limit';
 import dotenv from 'dotenv';
-import { errorHandler } from './middlewares/error.middleware';
-import authRoutes from './routes/auth.routes';
+import { errorHandler } from './shared/middlewares/error.middleware';
+import authRoutes from './Auth/auth.routes';
 
 dotenv.config();
 
