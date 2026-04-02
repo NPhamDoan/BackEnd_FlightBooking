@@ -1,0 +1,12 @@
+import Database, { Database as DatabaseType } from 'better-sqlite3';
+import path from 'path';
+
+const dbPath = process.env.DB_PATH || path.join(__dirname, '../../data/flight_booking.db');
+
+const db: DatabaseType = new Database(dbPath);
+
+// Enable WAL mode for better concurrent read performance
+db.pragma('journal_mode = WAL');
+db.pragma('foreign_keys = ON');
+
+export default db;

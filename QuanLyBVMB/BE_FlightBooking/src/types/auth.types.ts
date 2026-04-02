@@ -1,0 +1,36 @@
+export interface RegisterRequest {
+  email: string;
+  password: string;
+  fullName: string;
+  phone: string;
+}
+
+export interface LoginRequest {
+  email: string;
+  password: string;
+}
+
+export interface UserProfile {
+  id: number;
+  email: string;
+  fullName: string;
+  phone: string;
+  role: string;
+  createdAt: Date;
+}
+
+export interface AuthResponse {
+  token: string;
+  user: UserProfile;
+}
+
+export interface JwtPayload {
+  id: number;
+  email: string;
+  role: string;
+}
+
+export interface ChangePasswordRequest {
+  currentPassword: string;
+  newPassword: string;
+}
