@@ -1,0 +1,361 @@
+{
+  "info": {
+    "name": "Flight Booking - Flight",
+    "schema": "https://schema.getpostman.com/json/collection/v2.1.0/collection.json"
+  },
+  "variable": [
+    { "key": "baseUrl", "value": "http://localhost:4000" },
+    { "key": "token", "value": "" },
+    { "key": "adminToken", "value": "" },
+    { "key": "customerToken", "value": "" },
+    { "key": "flightId", "value": "1" },
+    { "key": "createdFlightId", "value": "" }
+  ],
+  "item": [
+    {
+      "name": "Setup - Login Admin",
+      "event": [{ "listen": "test", "script": { "exec": [
+        "const res = pm.response.json();",
+        "pm.collectionVariables.set('adminToken', res.token);",
+        "pm.collectionVariables.set('token', res.token);",
+        "pm.test('Status 200', () => pm.response.to.have.status(200));",
+        "pm.test('Role admin', () => pm.expect(res.user.role).to.eql('admin'));"
+      ]}}],
+      "request": {
+        "method": "POST",
+        "header": [{ "key": "Content-Type", "value": "application/json" }],
+        "url": "{{baseUrl}}/api/auth/login",
+        "body": { "mode": "raw", "raw": "{\n  \"email\": \"admin@flightbooking.local\",\n  \"password\": \"Admin@123\"\n}", "options": { "raw": { "language": "json" } } }
+      }
+    },
+    {
+      "name": "Setup - Login Customer",
+      "event": [{ "listen": "test", "script": { "exec": [
+        "const res = pm.response.json();",
+        "pm.collectionVariables.set('customerToken', res.token);",
+        "pm.test('Status 200', () => pm.response.to.have.status(200));",
+        "pm.test('Role customer', () => pm.expect(res.user.role).to.eql('customer'));"
+      ]}}],
+      "request": {
+        "method": "POST",
+        "header": [{ "key": "Content-Type", "value": "application/json" }],
+        "url": "{{baseUrl}}/api/auth/login",
+        "body": { "mode": "raw", "raw": "{\n  \"email\": \"nguyenvana@example.local\",\n  \"password\": \"Customer@123\"\n}", "options": { "raw": { "language": "json" } } }
+      }
+    },
+    {
+      "name": "Search Flights - SGN to HAN",
+      "event": [{ "listen": "test", "script": { "exec": [
+        "pm.test('Status 200', () => pm.response.to.have.status(200));",
+        "const res = pm.response.json();",
+        "pm.test('Has pagination', () => {",
+        "  pm.expect(res).to.have.property('data');",
+        "  pm.expect(res).to.have.property('total');",
+        "  pm.expect(res).to.have.property('page');",
+        "  pm.expect(res).to.have.property('totalPages');",
+        "});",
+        "pm.test('All scheduled', () => {",
+        "  res.data.forEach(f => pm.expect(f.status).to.eql('scheduled'));",
+        "});"
+      ]}}],
+      "request": {
+        "method": "GET",
+        "header": [],
+        "url": {
+          "raw": "{{baseUrl}}/api/flights/search?departure=SGN&arrival=HAN&departureDate=2026-05-01",
+          "host": ["{{baseUrl}}"],
+          "path": ["api", "flights", "search"],
+          "query": [
+            { "key": "departure", "value": "SGN" },
+            { "key": "arrival", "value": "HAN" },
+            { "key": "departureDate", "value": "2026-05-01" }
+          ]
+        }
+      }
+    },
+    {
+      "name": "Search Flights - With Price Filter",
+      "event": [{ "listen": "test", "script": { "exec": [
+        "pm.test('Status 200', () => pm.response.to.have.status(200));",
+        "const res = pm.response.json();",
+        "pm.test('Prices in range', () => {",
+        "  res.data.forEach(f => {",
+        "    pm.expect(f.base_price).to.be.at.least(500000);",
+        "    pm.expect(f.base_price).to.be.at.most(2000000);",
+        "  });",
+        "});"
+      ]}}],
+      "request": {
+        "method": "GET",
+        "header": [],
+        "url": {
+          "raw": "{{baseUrl}}/api/flights/search?departure=SGN&arrival=HAN&departureDate=2026-05-01&minPrice=500000&maxPrice=2000000",
+          "host": ["{{baseUrl}}"],
+          "path": ["api", "flights", "search"],
+          "query": [
+            { "key": "departure", "value": "SGN" },
+            { "key": "arrival", "value": "HAN" },
+            { "key": "departureDate", "value": "2026-05-01" },
+            { "key": "minPrice", "value": "500000" },
+            { "key": "maxPrice", "value": "2000000" }
+          ]
+        }
+      }
+    },
+    {
+      "name": "Search Flights - Sort by Price",
+      "event": [{ "listen": "test", "script": { "exec": [
+        "pm.test('Status 200', () => pm.response.to.have.status(200));",
+        "const res = pm.response.json();",
+        "pm.test('Sorted by price ASC', () => {",
+        "  for (let i = 1; i < res.data.length; i++) {",
+        "    pm.expect(res.data[i].base_price).to.be.at.least(res.data[i-1].base_price);",
+        "  }",
+        "});"
+      ]}}],
+      "request": {
+        "method": "GET",
+        "header": [],
+        "url": {
+          "raw": "{{baseUrl}}/api/flights/search?departure=SGN&arrival=HAN&departureDate=2026-05-01&sortBy=price",
+          "host": ["{{baseUrl}}"],
+          "path": ["api", "flights", "search"],
+          "query": [
+            { "key": "departure", "value": "SGN" },
+            { "key": "arrival", "value": "HAN" },
+            { "key": "departureDate", "value": "2026-05-01" },
+            { "key": "sortBy", "value": "price" }
+          ]
+        }
+      }
+    },
+    {
+      "name": "Search Flights - Invalid Airport Code",
+      "event": [{ "listen": "test", "script": { "exec": [
+        "pm.test('Status 400', () => pm.response.to.have.status(400));",
+        "pm.test('Has validation errors', () => {",
+        "  pm.expect(pm.response.json().errors).to.be.an('array');",
+        "});"
+      ]}}],
+      "request": {
+        "method": "GET",
+        "header": [],
+        "url": {
+          "raw": "{{baseUrl}}/api/flights/search?departure=xx&arrival=HAN&departureDate=2026-05-01",
+          "host": ["{{baseUrl}}"],
+          "path": ["api", "flights", "search"],
+          "query": [
+            { "key": "departure", "value": "xx" },
+            { "key": "arrival", "value": "HAN" },
+            { "key": "departureDate", "value": "2026-05-01" }
+          ]
+        }
+      }
+    },
+    {
+      "name": "Search Flights - Past Date",
+      "event": [{ "listen": "test", "script": { "exec": [
+        "pm.test('Status 400', () => pm.response.to.have.status(400));"
+      ]}}],
+      "request": {
+        "method": "GET",
+        "header": [],
+        "url": {
+          "raw": "{{baseUrl}}/api/flights/search?departure=SGN&arrival=HAN&departureDate=2020-01-01",
+          "host": ["{{baseUrl}}"],
+          "path": ["api", "flights", "search"],
+          "query": [
+            { "key": "departure", "value": "SGN" },
+            { "key": "arrival", "value": "HAN" },
+            { "key": "departureDate", "value": "2020-01-01" }
+          ]
+        }
+      }
+    },
+    {
+      "name": "Get Flight By ID",
+      "event": [{ "listen": "test", "script": { "exec": [
+        "pm.test('Status 200', () => pm.response.to.have.status(200));",
+        "const res = pm.response.json();",
+        "pm.test('Has flight detail', () => {",
+        "  pm.expect(res.flight).to.have.property('airline_name');",
+        "  pm.expect(res.flight).to.have.property('departure_airport_code');",
+        "  pm.expect(res.flight).to.have.property('available_seats');",
+        "});"
+      ]}}],
+      "request": {
+        "method": "GET",
+        "header": [],
+        "url": "{{baseUrl}}/api/flights/{{flightId}}"
+      }
+    },
+    {
+      "name": "Get Flight By ID - Not Found",
+      "event": [{ "listen": "test", "script": { "exec": [
+        "pm.test('Status 404', () => pm.response.to.have.status(404));"
+      ]}}],
+      "request": {
+        "method": "GET",
+        "header": [],
+        "url": "{{baseUrl}}/api/flights/99999"
+      }
+    },
+    {
+      "name": "Get Flight Seats",
+      "event": [{ "listen": "test", "script": { "exec": [
+        "pm.test('Status 200', () => pm.response.to.have.status(200));",
+        "const res = pm.response.json();",
+        "pm.test('Has seats array', () => {",
+        "  pm.expect(res.seats).to.be.an('array');",
+        "  pm.expect(res.seats.length).to.be.above(0);",
+        "});",
+        "pm.test('Seat has required fields', () => {",
+        "  const s = res.seats[0];",
+        "  pm.expect(s).to.have.property('seat_number');",
+        "  pm.expect(s).to.have.property('class');",
+        "  pm.expect(s).to.have.property('status');",
+        "  pm.expect(s).to.have.property('price_modifier');",
+        "});"
+      ]}}],
+      "request": {
+        "method": "GET",
+        "header": [],
+        "url": "{{baseUrl}}/api/flights/{{flightId}}/seats"
+      }
+    },
+    {
+      "name": "Get Flight Seats - Not Found",
+      "event": [{ "listen": "test", "script": { "exec": [
+        "pm.test('Status 404', () => pm.response.to.have.status(404));"
+      ]}}],
+      "request": {
+        "method": "GET",
+        "header": [],
+        "url": "{{baseUrl}}/api/flights/99999/seats"
+      }
+    },
+    {
+      "name": "Admin - Create Flight",
+      "event": [{ "listen": "test", "script": { "exec": [
+        "pm.test('Status 201', () => pm.response.to.have.status(201));",
+        "const res = pm.response.json();",
+        "pm.collectionVariables.set('createdFlightId', res.flight.id);",
+        "pm.test('Has flight', () => pm.expect(res.flight).to.have.property('id'));",
+        "pm.test('Has seats', () => {",
+        "  pm.expect(res.seats).to.be.an('array');",
+        "  pm.expect(res.seats.length).to.eql(12);",
+        "});"
+      ]}}],
+      "request": {
+        "method": "POST",
+        "header": [
+          { "key": "Content-Type", "value": "application/json" },
+          { "key": "Authorization", "value": "Bearer {{adminToken}}" }
+        ],
+        "url": "{{baseUrl}}/api/admin/flights",
+        "body": { "mode": "raw", "raw": "{\n  \"airline_id\": 1,\n  \"departure_airport_id\": 1,\n  \"arrival_airport_id\": 2,\n  \"departure_time\": \"2026-06-15T08:00:00Z\",\n  \"arrival_time\": \"2026-06-15T10:15:00Z\",\n  \"base_price\": 1800000,\n  \"total_seats\": 12\n}", "options": { "raw": { "language": "json" } } }
+      }
+    },
+    {
+      "name": "Admin - Create Flight - Invalid Time",
+      "event": [{ "listen": "test", "script": { "exec": [
+        "pm.test('Status 400', () => pm.response.to.have.status(400));"
+      ]}}],
+      "request": {
+        "method": "POST",
+        "header": [
+          { "key": "Content-Type", "value": "application/json" },
+          { "key": "Authorization", "value": "Bearer {{adminToken}}" }
+        ],
+        "url": "{{baseUrl}}/api/admin/flights",
+        "body": { "mode": "raw", "raw": "{\n  \"airline_id\": 1,\n  \"departure_airport_id\": 1,\n  \"arrival_airport_id\": 2,\n  \"departure_time\": \"2026-06-15T10:00:00Z\",\n  \"arrival_time\": \"2026-06-15T08:00:00Z\",\n  \"base_price\": 1800000,\n  \"total_seats\": 12\n}", "options": { "raw": { "language": "json" } } }
+      }
+    },
+    {
+      "name": "Admin - Create Flight - Customer Forbidden",
+      "event": [{ "listen": "test", "script": { "exec": [
+        "pm.test('Status 403', () => pm.response.to.have.status(403));"
+      ]}}],
+      "request": {
+        "method": "POST",
+        "header": [
+          { "key": "Content-Type", "value": "application/json" },
+          { "key": "Authorization", "value": "Bearer {{customerToken}}" }
+        ],
+        "url": "{{baseUrl}}/api/admin/flights",
+        "body": { "mode": "raw", "raw": "{\n  \"airline_id\": 1,\n  \"departure_airport_id\": 1,\n  \"arrival_airport_id\": 2,\n  \"departure_time\": \"2026-06-15T08:00:00Z\",\n  \"arrival_time\": \"2026-06-15T10:15:00Z\",\n  \"base_price\": 1800000,\n  \"total_seats\": 12\n}", "options": { "raw": { "language": "json" } } }
+      }
+    },
+    {
+      "name": "Admin - Create Flight - No Token",
+      "event": [{ "listen": "test", "script": { "exec": [
+        "pm.test('Status 401', () => pm.response.to.have.status(401));"
+      ]}}],
+      "request": {
+        "method": "POST",
+        "header": [{ "key": "Content-Type", "value": "application/json" }],
+        "url": "{{baseUrl}}/api/admin/flights",
+        "body": { "mode": "raw", "raw": "{\n  \"airline_id\": 1,\n  \"departure_airport_id\": 1,\n  \"arrival_airport_id\": 2,\n  \"departure_time\": \"2026-06-15T08:00:00Z\",\n  \"arrival_time\": \"2026-06-15T10:15:00Z\",\n  \"base_price\": 1800000,\n  \"total_seats\": 12\n}", "options": { "raw": { "language": "json" } } }
+      }
+    },
+    {
+      "name": "Admin - Update Flight",
+      "event": [{ "listen": "test", "script": { "exec": [
+        "pm.test('Status 200', () => pm.response.to.have.status(200));",
+        "pm.test('Price updated', () => {",
+        "  pm.expect(pm.response.json().flight.base_price).to.eql(2000000);",
+        "});"
+      ]}}],
+      "request": {
+        "method": "PUT",
+        "header": [
+          { "key": "Content-Type", "value": "application/json" },
+          { "key": "Authorization", "value": "Bearer {{adminToken}}" }
+        ],
+        "url": "{{baseUrl}}/api/admin/flights/{{createdFlightId}}",
+        "body": { "mode": "raw", "raw": "{\n  \"base_price\": 2000000\n}", "options": { "raw": { "language": "json" } } }
+      }
+    },
+    {
+      "name": "Admin - Update Flight - Not Found",
+      "event": [{ "listen": "test", "script": { "exec": [
+        "pm.test('Status 404', () => pm.response.to.have.status(404));"
+      ]}}],
+      "request": {
+        "method": "PUT",
+        "header": [
+          { "key": "Content-Type", "value": "application/json" },
+          { "key": "Authorization", "value": "Bearer {{adminToken}}" }
+        ],
+        "url": "{{baseUrl}}/api/admin/flights/99999",
+        "body": { "mode": "raw", "raw": "{\n  \"base_price\": 2000000\n}", "options": { "raw": { "language": "json" } } }
+      }
+    },
+    {
+      "name": "Admin - Delete Flight",
+      "event": [{ "listen": "test", "script": { "exec": [
+        "pm.test('Status 200', () => pm.response.to.have.status(200));"
+      ]}}],
+      "request": {
+        "method": "DELETE",
+        "header": [
+          { "key": "Authorization", "value": "Bearer {{adminToken}}" }
+        ],
+        "url": "{{baseUrl}}/api/admin/flights/{{createdFlightId}}"
+      }
+    },
+    {
+      "name": "Admin - Delete Flight - Not Found",
+      "event": [{ "listen": "test", "script": { "exec": [
+        "pm.test('Status 404', () => pm.response.to.have.status(404));"
+      ]}}],
+      "request": {
+        "method": "DELETE",
+        "header": [
+          { "key": "Authorization", "value": "Bearer {{adminToken}}" }
+        ],
+        "url": "{{baseUrl}}/api/admin/flights/99999"
+      }
+    }
+  ]
+}

@@ -1,0 +1,241 @@
+{
+  "info": {
+    "name": "Flight Booking - Booking",
+    "schema": "https://schema.getpostman.com/json/collection/v2.1.0/collection.json"
+  },
+  "variable": [
+    { "key": "baseUrl", "value": "http://localhost:4000" },
+    { "key": "adminToken", "value": "" },
+    { "key": "customerToken", "value": "" },
+    { "key": "bookingId", "value": "" },
+    { "key": "bookingCode", "value": "" }
+  ],
+  "item": [
+    {
+      "name": "Setup - Login Admin",
+      "event": [{ "listen": "test", "script": { "exec": [
+        "const res = pm.response.json();",
+        "pm.collectionVariables.set('adminToken', res.token);",
+        "pm.test('Status 200', () => pm.response.to.have.status(200));"
+      ]}}],
+      "request": {
+        "method": "POST",
+        "header": [{ "key": "Content-Type", "value": "application/json" }],
+        "url": "{{baseUrl}}/api/auth/login",
+        "body": { "mode": "raw", "raw": "{\n  \"email\": \"admin@flightbooking.local\",\n  \"password\": \"Admin@123\"\n}", "options": { "raw": { "language": "json" } } }
+      }
+    },
+    {
+      "name": "Setup - Login Customer",
+      "event": [{ "listen": "test", "script": { "exec": [
+        "const res = pm.response.json();",
+        "pm.collectionVariables.set('customerToken', res.token);",
+        "pm.test('Status 200', () => pm.response.to.have.status(200));"
+      ]}}],
+      "request": {
+        "method": "POST",
+        "header": [{ "key": "Content-Type", "value": "application/json" }],
+        "url": "{{baseUrl}}/api/auth/login",
+        "body": { "mode": "raw", "raw": "{\n  \"email\": \"nguyenvana@example.local\",\n  \"password\": \"Customer@123\"\n}", "options": { "raw": { "language": "json" } } }
+      }
+    },
+    {
+      "name": "Create Booking - Success",
+      "event": [{ "listen": "test", "script": { "exec": [
+        "pm.test('Status 201', () => pm.response.to.have.status(201));",
+        "const res = pm.response.json();",
+        "pm.collectionVariables.set('bookingId', res.booking.id);",
+        "pm.collectionVariables.set('bookingCode', res.booking.booking_code);",
+        "pm.test('Has booking code', () => pm.expect(res.booking.booking_code).to.be.a('string'));",
+        "pm.test('Status pending', () => pm.expect(res.booking.status).to.eql('pending'));",
+        "pm.test('Has total_amount', () => pm.expect(res.booking.total_amount).to.be.above(0));"
+      ]}}],
+      "request": {
+        "method": "POST",
+        "header": [
+          { "key": "Content-Type", "value": "application/json" },
+          { "key": "Authorization", "value": "Bearer {{customerToken}}" }
+        ],
+        "url": "{{baseUrl}}/api/bookings",
+        "body": { "mode": "raw", "raw": "{\n  \"flightId\": 2,\n  \"passengers\": [\n    {\n      \"fullName\": \"Test Passenger\",\n      \"dateOfBirth\": \"1990-01-15\",\n      \"idNumber\": \"012345678901\",\n      \"idType\": \"cccd\"\n    }\n  ],\n  \"seatIds\": [37]\n}", "options": { "raw": { "language": "json" } } }
+      }
+    },
+    {
+      "name": "Create Booking - Seat Already Booked",
+      "event": [{ "listen": "test", "script": { "exec": [
+        "pm.test('Status 409', () => pm.response.to.have.status(409));"
+      ]}}],
+      "request": {
+        "method": "POST",
+        "header": [
+          { "key": "Content-Type", "value": "application/json" },
+          { "key": "Authorization", "value": "Bearer {{customerToken}}" }
+        ],
+        "url": "{{baseUrl}}/api/bookings",
+        "body": { "mode": "raw", "raw": "{\n  \"flightId\": 1,\n  \"passengers\": [\n    {\n      \"fullName\": \"Test\",\n      \"dateOfBirth\": \"1990-01-15\",\n      \"idNumber\": \"012345678901\",\n      \"idType\": \"cccd\"\n    }\n  ],\n  \"seatIds\": [13]\n}", "options": { "raw": { "language": "json" } } }
+      }
+    },
+    {
+      "name": "Create Booking - Flight Not Found",
+      "event": [{ "listen": "test", "script": { "exec": [
+        "pm.test('Status 404', () => pm.response.to.have.status(404));"
+      ]}}],
+      "request": {
+        "method": "POST",
+        "header": [
+          { "key": "Content-Type", "value": "application/json" },
+          { "key": "Authorization", "value": "Bearer {{customerToken}}" }
+        ],
+        "url": "{{baseUrl}}/api/bookings",
+        "body": { "mode": "raw", "raw": "{\n  \"flightId\": 99999,\n  \"passengers\": [\n    {\n      \"fullName\": \"Test\",\n      \"dateOfBirth\": \"1990-01-15\",\n      \"idNumber\": \"012345678901\",\n      \"idType\": \"cccd\"\n    }\n  ],\n  \"seatIds\": [1]\n}", "options": { "raw": { "language": "json" } } }
+      }
+    },
+    {
+      "name": "Create Booking - Passengers != Seats",
+      "event": [{ "listen": "test", "script": { "exec": [
+        "pm.test('Status 400', () => pm.response.to.have.status(400));"
+      ]}}],
+      "request": {
+        "method": "POST",
+        "header": [
+          { "key": "Content-Type", "value": "application/json" },
+          { "key": "Authorization", "value": "Bearer {{customerToken}}" }
+        ],
+        "url": "{{baseUrl}}/api/bookings",
+        "body": { "mode": "raw", "raw": "{\n  \"flightId\": 2,\n  \"passengers\": [\n    {\n      \"fullName\": \"Test\",\n      \"dateOfBirth\": \"1990-01-15\",\n      \"idNumber\": \"012345678901\",\n      \"idType\": \"cccd\"\n    }\n  ],\n  \"seatIds\": [38, 39]\n}", "options": { "raw": { "language": "json" } } }
+      }
+    },
+    {
+      "name": "Create Booking - No Token",
+      "event": [{ "listen": "test", "script": { "exec": [
+        "pm.test('Status 401', () => pm.response.to.have.status(401));"
+      ]}}],
+      "request": {
+        "method": "POST",
+        "header": [{ "key": "Content-Type", "value": "application/json" }],
+        "url": "{{baseUrl}}/api/bookings",
+        "body": { "mode": "raw", "raw": "{\n  \"flightId\": 2,\n  \"passengers\": [\n    {\n      \"fullName\": \"Test\",\n      \"dateOfBirth\": \"1990-01-15\",\n      \"idNumber\": \"012345678901\",\n      \"idType\": \"cccd\"\n    }\n  ],\n  \"seatIds\": [38]\n}", "options": { "raw": { "language": "json" } } }
+      }
+    },
+    {
+      "name": "Get Booking History",
+      "event": [{ "listen": "test", "script": { "exec": [
+        "pm.test('Status 200', () => pm.response.to.have.status(200));",
+        "const res = pm.response.json();",
+        "pm.test('Has pagination', () => {",
+        "  pm.expect(res).to.have.property('data');",
+        "  pm.expect(res).to.have.property('total');",
+        "  pm.expect(res).to.have.property('page');",
+        "});"
+      ]}}],
+      "request": {
+        "method": "GET",
+        "header": [{ "key": "Authorization", "value": "Bearer {{customerToken}}" }],
+        "url": "{{baseUrl}}/api/bookings"
+      }
+    },
+    {
+      "name": "Get Booking By ID",
+      "event": [{ "listen": "test", "script": { "exec": [
+        "pm.test('Status 200', () => pm.response.to.have.status(200));",
+        "const res = pm.response.json();",
+        "pm.test('Has booking detail', () => {",
+        "  pm.expect(res.booking).to.have.property('booking_code');",
+        "  pm.expect(res.booking).to.have.property('passengers');",
+        "  pm.expect(res.booking.passengers).to.be.an('array');",
+        "});"
+      ]}}],
+      "request": {
+        "method": "GET",
+        "header": [{ "key": "Authorization", "value": "Bearer {{customerToken}}" }],
+        "url": "{{baseUrl}}/api/bookings/{{bookingId}}"
+      }
+    },
+    {
+      "name": "Get Booking By ID - Not Found",
+      "event": [{ "listen": "test", "script": { "exec": [
+        "pm.test('Status 404', () => pm.response.to.have.status(404));"
+      ]}}],
+      "request": {
+        "method": "GET",
+        "header": [{ "key": "Authorization", "value": "Bearer {{customerToken}}" }],
+        "url": "{{baseUrl}}/api/bookings/99999"
+      }
+    },
+    {
+      "name": "Cancel Booking - Success",
+      "event": [{ "listen": "test", "script": { "exec": [
+        "pm.test('Status 200', () => pm.response.to.have.status(200));",
+        "pm.test('Status cancelled', () => pm.expect(pm.response.json().booking.status).to.eql('cancelled'));"
+      ]}}],
+      "request": {
+        "method": "POST",
+        "header": [{ "key": "Authorization", "value": "Bearer {{customerToken}}" }],
+        "url": "{{baseUrl}}/api/bookings/{{bookingId}}/cancel"
+      }
+    },
+    {
+      "name": "Cancel Booking - Already Cancelled",
+      "event": [{ "listen": "test", "script": { "exec": [
+        "pm.test('Status 400', () => pm.response.to.have.status(400));"
+      ]}}],
+      "request": {
+        "method": "POST",
+        "header": [{ "key": "Authorization", "value": "Bearer {{customerToken}}" }],
+        "url": "{{baseUrl}}/api/bookings/{{bookingId}}/cancel"
+      }
+    },
+    {
+      "name": "Admin - Get All Bookings",
+      "event": [{ "listen": "test", "script": { "exec": [
+        "pm.test('Status 200', () => pm.response.to.have.status(200));",
+        "pm.test('Has data', () => pm.expect(pm.response.json().data).to.be.an('array'));"
+      ]}}],
+      "request": {
+        "method": "GET",
+        "header": [{ "key": "Authorization", "value": "Bearer {{adminToken}}" }],
+        "url": "{{baseUrl}}/api/admin/bookings"
+      }
+    },
+    {
+      "name": "Admin - Get All Bookings - Customer Forbidden",
+      "event": [{ "listen": "test", "script": { "exec": [
+        "pm.test('Status 403', () => pm.response.to.have.status(403));"
+      ]}}],
+      "request": {
+        "method": "GET",
+        "header": [{ "key": "Authorization", "value": "Bearer {{customerToken}}" }],
+        "url": "{{baseUrl}}/api/admin/bookings"
+      }
+    },
+    {
+      "name": "Admin - Update Booking Status",
+      "event": [{ "listen": "test", "script": { "exec": [
+        "pm.test('Status 200', () => pm.response.to.have.status(200));"
+      ]}}],
+      "request": {
+        "method": "PUT",
+        "header": [
+          { "key": "Content-Type", "value": "application/json" },
+          { "key": "Authorization", "value": "Bearer {{adminToken}}" }
+        ],
+        "url": "{{baseUrl}}/api/admin/bookings/1/status",
+        "body": { "mode": "raw", "raw": "{\n  \"status\": \"completed\"\n}", "options": { "raw": { "language": "json" } } }
+      }
+    },
+    {
+      "name": "Admin - Cancel Flight Cascade",
+      "event": [{ "listen": "test", "script": { "exec": [
+        "pm.test('Status 200', () => pm.response.to.have.status(200));",
+        "pm.test('Has cancelled count', () => {",
+        "  pm.expect(pm.response.json()).to.have.property('cancelledBookings');",
+        "});"
+      ]}}],
+      "request": {
+        "method": "POST",
+        "header": [{ "key": "Authorization", "value": "Bearer {{adminToken}}" }],
+        "url": "{{baseUrl}}/api/admin/bookings/flight/4/cancel"
+      }
+    }
+  ]
+}

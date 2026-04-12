@@ -132,7 +132,7 @@ insertAirport.run('Phú Quốc', 'PQC', 'Phú Quốc', 'Việt Nam');
 
 // Flights
 const insertFlight = db.prepare(
-  `INSERT INTO flights (airline_id, departure_airport_id, arrival_airport_id, departure_time, arrival_time, base_price, total_seats, status)
+  `INSERT OR IGNORE INTO flights (airline_id, departure_airport_id, arrival_airport_id, departure_time, arrival_time, base_price, total_seats, status)
    VALUES (?, ?, ?, ?, ?, ?, ?, ?)`
 );
 // VNA: SGN -> HAN
@@ -177,7 +177,7 @@ for (let flightId = 1; flightId <= 6; flightId++) {
 
 // Bookings mẫu
 const insertBooking = db.prepare(
-  `INSERT INTO bookings (user_id, flight_id, booking_code, status, total_amount) VALUES (?, ?, ?, ?, ?)`
+  `INSERT OR IGNORE INTO bookings (user_id, flight_id, booking_code, status, total_amount) VALUES (?, ?, ?, ?, ?)`
 );
 // Customer 1 đặt vé chuyến SGN->HAN (flight 1), 2 ghế economy = 1500000 * 1.0 * 2
 insertBooking.run(2, 1, 'BOOK0001', 'confirmed', 3000000);
@@ -201,7 +201,7 @@ insertPassenger.run(2, 67, 'Trần Thị B', '1988-03-10', 'P12345678', 'passpor
 
 // Payment cho booking 1 (confirmed)
 db.prepare(
-  `INSERT INTO payments (booking_id, amount, method, status, transaction_code, paid_at)
+  `INSERT OR IGNORE INTO payments (booking_id, amount, method, status, transaction_code, paid_at)
    VALUES (?, ?, ?, ?, ?, ?)`
 ).run(1, 3000000, 'credit_card', 'success', 'TXN20260501001', '2026-04-28 10:30:00');
 

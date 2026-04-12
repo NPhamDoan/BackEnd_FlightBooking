@@ -1,0 +1,149 @@
+{
+  "info": {
+    "name": "Flight Booking - Payment",
+    "schema": "https://schema.getpostman.com/json/collection/v2.1.0/collection.json"
+  },
+  "variable": [
+    { "key": "baseUrl", "value": "http://localhost:4000" },
+    { "key": "customerToken", "value": "" },
+    { "key": "bookingId", "value": "" },
+    { "key": "totalAmount", "value": "" }
+  ],
+  "item": [
+    {
+      "name": "Setup - Login Customer",
+      "event": [{ "listen": "test", "script": { "exec": [
+        "const res = pm.response.json();",
+        "pm.collectionVariables.set('customerToken', res.token);",
+        "pm.test('Status 200', () => pm.response.to.have.status(200));"
+      ]}}],
+      "request": {
+        "method": "POST",
+        "header": [{ "key": "Content-Type", "value": "application/json" }],
+        "url": "{{baseUrl}}/api/auth/login",
+        "body": { "mode": "raw", "raw": "{\n  \"email\": \"nguyenvana@example.local\",\n  \"password\": \"Customer@123\"\n}", "options": { "raw": { "language": "json" } } }
+      }
+    },
+    {
+      "name": "Setup - Create Booking for Payment",
+      "event": [{ "listen": "test", "script": { "exec": [
+        "pm.test('Status 201', () => pm.response.to.have.status(201));",
+        "const res = pm.response.json();",
+        "pm.collectionVariables.set('bookingId', res.booking.id);",
+        "pm.collectionVariables.set('totalAmount', res.booking.total_amount);"
+      ]}}],
+      "request": {
+        "method": "POST",
+        "header": [
+          { "key": "Content-Type", "value": "application/json" },
+          { "key": "Authorization", "value": "Bearer {{customerToken}}" }
+        ],
+        "url": "{{baseUrl}}/api/bookings",
+        "body": { "mode": "raw", "raw": "{\n  \"flightId\": 5,\n  \"passengers\": [\n    {\n      \"fullName\": \"Payment Test User\",\n      \"dateOfBirth\": \"1990-01-15\",\n      \"idNumber\": \"012345678901\",\n      \"idType\": \"cccd\"\n    }\n  ],\n  \"seatIds\": [121]\n}", "options": { "raw": { "language": "json" } } }
+      }
+    },
+    {
+      "name": "Process Payment - Wrong Amount",
+      "event": [{ "listen": "test", "script": { "exec": [
+        "pm.test('Status 400', () => pm.response.to.have.status(400));"
+      ]}}],
+      "request": {
+        "method": "POST",
+        "header": [
+          { "key": "Content-Type", "value": "application/json" },
+          { "key": "Authorization", "value": "Bearer {{customerToken}}" }
+        ],
+        "url": "{{baseUrl}}/api/payments",
+        "body": { "mode": "raw", "raw": "{\n  \"bookingId\": {{bookingId}},\n  \"amount\": 999,\n  \"method\": \"credit_card\"\n}", "options": { "raw": { "language": "json" } } }
+      }
+    },
+    {
+      "name": "Process Payment - Success",
+      "event": [{ "listen": "test", "script": { "exec": [
+        "pm.test('Status 200', () => pm.response.to.have.status(200));",
+        "const res = pm.response.json();",
+        "pm.test('Status success', () => pm.expect(res.payment.status).to.eql('success'));",
+        "pm.test('Has transaction code', () => pm.expect(res.payment.transactionCode).to.be.a('string'));",
+        "pm.test('Has paidAt', () => pm.expect(res.payment.paidAt).to.be.a('string'));"
+      ]}}],
+      "request": {
+        "method": "POST",
+        "header": [
+          { "key": "Content-Type", "value": "application/json" },
+          { "key": "Authorization", "value": "Bearer {{customerToken}}" }
+        ],
+        "url": "{{baseUrl}}/api/payments",
+        "body": { "mode": "raw", "raw": "{\n  \"bookingId\": {{bookingId}},\n  \"amount\": {{totalAmount}},\n  \"method\": \"credit_card\"\n}", "options": { "raw": { "language": "json" } } }
+      }
+    },
+    {
+      "name": "Process Payment - Already Paid",
+      "event": [{ "listen": "test", "script": { "exec": [
+        "pm.test('Status 404', () => pm.response.to.have.status(404));"
+      ]}}],
+      "request": {
+        "method": "POST",
+        "header": [
+          { "key": "Content-Type", "value": "application/json" },
+          { "key": "Authorization", "value": "Bearer {{customerToken}}" }
+        ],
+        "url": "{{baseUrl}}/api/payments",
+        "body": { "mode": "raw", "raw": "{\n  \"bookingId\": {{bookingId}},\n  \"amount\": {{totalAmount}},\n  \"method\": \"credit_card\"\n}", "options": { "raw": { "language": "json" } } }
+      }
+    },
+    {
+      "name": "Process Payment - Booking Not Found",
+      "event": [{ "listen": "test", "script": { "exec": [
+        "pm.test('Status 404', () => pm.response.to.have.status(404));"
+      ]}}],
+      "request": {
+        "method": "POST",
+        "header": [
+          { "key": "Content-Type", "value": "application/json" },
+          { "key": "Authorization", "value": "Bearer {{customerToken}}" }
+        ],
+        "url": "{{baseUrl}}/api/payments",
+        "body": { "mode": "raw", "raw": "{\n  \"bookingId\": 99999,\n  \"amount\": 1000000,\n  \"method\": \"credit_card\"\n}", "options": { "raw": { "language": "json" } } }
+      }
+    },
+    {
+      "name": "Process Payment - No Token",
+      "event": [{ "listen": "test", "script": { "exec": [
+        "pm.test('Status 401', () => pm.response.to.have.status(401));"
+      ]}}],
+      "request": {
+        "method": "POST",
+        "header": [{ "key": "Content-Type", "value": "application/json" }],
+        "url": "{{baseUrl}}/api/payments",
+        "body": { "mode": "raw", "raw": "{\n  \"bookingId\": 1,\n  \"amount\": 1000000,\n  \"method\": \"credit_card\"\n}", "options": { "raw": { "language": "json" } } }
+      }
+    },
+    {
+      "name": "Get Payment By Booking ID",
+      "event": [{ "listen": "test", "script": { "exec": [
+        "pm.test('Status 200', () => pm.response.to.have.status(200));",
+        "pm.test('Has payment', () => {",
+        "  const p = pm.response.json().payment;",
+        "  pm.expect(p).to.have.property('transaction_code');",
+        "  pm.expect(p).to.have.property('status');",
+        "});"
+      ]}}],
+      "request": {
+        "method": "GET",
+        "header": [{ "key": "Authorization", "value": "Bearer {{customerToken}}" }],
+        "url": "{{baseUrl}}/api/payments/booking/{{bookingId}}"
+      }
+    },
+    {
+      "name": "Get Payment - Booking Not Found",
+      "event": [{ "listen": "test", "script": { "exec": [
+        "pm.test('Status 404', () => pm.response.to.have.status(404));"
+      ]}}],
+      "request": {
+        "method": "GET",
+        "header": [{ "key": "Authorization", "value": "Bearer {{customerToken}}" }],
+        "url": "{{baseUrl}}/api/payments/booking/99999"
+      }
+    }
+  ]
+}

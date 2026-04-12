@@ -1,0 +1,166 @@
+{
+  "info": {
+    "name": "Flight Booking - Report",
+    "schema": "https://schema.getpostman.com/json/collection/v2.1.0/collection.json"
+  },
+  "variable": [
+    { "key": "baseUrl", "value": "http://localhost:4000" },
+    { "key": "adminToken", "value": "" },
+    { "key": "customerToken", "value": "" }
+  ],
+  "item": [
+    {
+      "name": "Setup - Login Admin",
+      "event": [{ "listen": "test", "script": { "exec": [
+        "const res = pm.response.json();",
+        "pm.collectionVariables.set('adminToken', res.token);",
+        "pm.test('Status 200', () => pm.response.to.have.status(200));"
+      ]}}],
+      "request": {
+        "method": "POST",
+        "header": [{ "key": "Content-Type", "value": "application/json" }],
+        "url": "{{baseUrl}}/api/auth/login",
+        "body": { "mode": "raw", "raw": "{\n  \"email\": \"admin@flightbooking.local\",\n  \"password\": \"Admin@123\"\n}", "options": { "raw": { "language": "json" } } }
+      }
+    },
+    {
+      "name": "Setup - Login Customer",
+      "event": [{ "listen": "test", "script": { "exec": [
+        "const res = pm.response.json();",
+        "pm.collectionVariables.set('customerToken', res.token);",
+        "pm.test('Status 200', () => pm.response.to.have.status(200));"
+      ]}}],
+      "request": {
+        "method": "POST",
+        "header": [{ "key": "Content-Type", "value": "application/json" }],
+        "url": "{{baseUrl}}/api/auth/login",
+        "body": { "mode": "raw", "raw": "{\n  \"email\": \"nguyenvana@example.local\",\n  \"password\": \"Customer@123\"\n}", "options": { "raw": { "language": "json" } } }
+      }
+    },
+    {
+      "name": "Revenue By Airline",
+      "event": [{ "listen": "test", "script": { "exec": [
+        "pm.test('Status 200', () => pm.response.to.have.status(200));",
+        "pm.test('Has data array', () => pm.expect(pm.response.json().data).to.be.an('array'));"
+      ]}}],
+      "request": {
+        "method": "GET",
+        "header": [{ "key": "Authorization", "value": "Bearer {{adminToken}}" }],
+        "url": {
+          "raw": "{{baseUrl}}/api/admin/reports/airline?startDate=2026-01-01&endDate=2026-12-31",
+          "host": ["{{baseUrl}}"],
+          "path": ["api", "admin", "reports", "airline"],
+          "query": [
+            { "key": "startDate", "value": "2026-01-01" },
+            { "key": "endDate", "value": "2026-12-31" }
+          ]
+        }
+      }
+    },
+    {
+      "name": "Revenue By Airline - Customer Forbidden",
+      "event": [{ "listen": "test", "script": { "exec": [
+        "pm.test('Status 403', () => pm.response.to.have.status(403));"
+      ]}}],
+      "request": {
+        "method": "GET",
+        "header": [{ "key": "Authorization", "value": "Bearer {{customerToken}}" }],
+        "url": {
+          "raw": "{{baseUrl}}/api/admin/reports/airline?startDate=2026-01-01&endDate=2026-12-31",
+          "host": ["{{baseUrl}}"],
+          "path": ["api", "admin", "reports", "airline"],
+          "query": [
+            { "key": "startDate", "value": "2026-01-01" },
+            { "key": "endDate", "value": "2026-12-31" }
+          ]
+        }
+      }
+    },
+    {
+      "name": "Revenue By Airline - No Token",
+      "event": [{ "listen": "test", "script": { "exec": [
+        "pm.test('Status 401', () => pm.response.to.have.status(401));"
+      ]}}],
+      "request": {
+        "method": "GET",
+        "header": [],
+        "url": {
+          "raw": "{{baseUrl}}/api/admin/reports/airline?startDate=2026-01-01&endDate=2026-12-31",
+          "host": ["{{baseUrl}}"],
+          "path": ["api", "admin", "reports", "airline"],
+          "query": [
+            { "key": "startDate", "value": "2026-01-01" },
+            { "key": "endDate", "value": "2026-12-31" }
+          ]
+        }
+      }
+    },
+    {
+      "name": "Revenue By Airline - Invalid Date Range",
+      "event": [{ "listen": "test", "script": { "exec": [
+        "pm.test('Status 400', () => pm.response.to.have.status(400));"
+      ]}}],
+      "request": {
+        "method": "GET",
+        "header": [{ "key": "Authorization", "value": "Bearer {{adminToken}}" }],
+        "url": {
+          "raw": "{{baseUrl}}/api/admin/reports/airline?startDate=2026-12-31&endDate=2026-01-01",
+          "host": ["{{baseUrl}}"],
+          "path": ["api", "admin", "reports", "airline"],
+          "query": [
+            { "key": "startDate", "value": "2026-12-31" },
+            { "key": "endDate", "value": "2026-01-01" }
+          ]
+        }
+      }
+    },
+    {
+      "name": "Revenue By Route",
+      "event": [{ "listen": "test", "script": { "exec": [
+        "pm.test('Status 200', () => pm.response.to.have.status(200));",
+        "pm.test('Has data array', () => pm.expect(pm.response.json().data).to.be.an('array'));"
+      ]}}],
+      "request": {
+        "method": "GET",
+        "header": [{ "key": "Authorization", "value": "Bearer {{adminToken}}" }],
+        "url": {
+          "raw": "{{baseUrl}}/api/admin/reports/route?startDate=2026-01-01&endDate=2026-12-31",
+          "host": ["{{baseUrl}}"],
+          "path": ["api", "admin", "reports", "route"],
+          "query": [
+            { "key": "startDate", "value": "2026-01-01" },
+            { "key": "endDate", "value": "2026-12-31" }
+          ]
+        }
+      }
+    },
+    {
+      "name": "Revenue By Month",
+      "event": [{ "listen": "test", "script": { "exec": [
+        "pm.test('Status 200', () => pm.response.to.have.status(200));",
+        "const data = pm.response.json().data;",
+        "pm.test('Has 12 months', () => pm.expect(data.length).to.eql(12));",
+        "pm.test('Each month has required fields', () => {",
+        "  data.forEach(m => {",
+        "    pm.expect(m).to.have.property('month');",
+        "    pm.expect(m).to.have.property('year');",
+        "    pm.expect(m).to.have.property('totalRevenue');",
+        "    pm.expect(m).to.have.property('totalBookings');",
+        "  });",
+        "});"
+      ]}}],
+      "request": {
+        "method": "GET",
+        "header": [{ "key": "Authorization", "value": "Bearer {{adminToken}}" }],
+        "url": {
+          "raw": "{{baseUrl}}/api/admin/reports/monthly?year=2026",
+          "host": ["{{baseUrl}}"],
+          "path": ["api", "admin", "reports", "monthly"],
+          "query": [
+            { "key": "year", "value": "2026" }
+          ]
+        }
+      }
+    }
+  ]
+}
