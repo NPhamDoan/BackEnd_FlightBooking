@@ -8,7 +8,8 @@
     "build": "tsc",
     "start": "node dist/server.js",
     "test": "jest --run-in-band",
-    "seed": "ts-node src/seeds/seed.ts"
+    "seed": "ts-node src/seeds/seed.ts",
+    "setup": "bash scripts/setup.sh"
   },
   "dependencies": {
     "bcryptjs": "^2.4.3",
