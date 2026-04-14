@@ -1,8 +1,10 @@
+import dotenv from 'dotenv';
+dotenv.config();
+
 import express from 'express';
 import cors from 'cors';
 import helmet from 'helmet';
 import rateLimit from 'express-rate-limit';
-import dotenv from 'dotenv';
 import { errorHandler } from './shared/middlewares/error.middleware';
 import authRoutes from './Auth/auth.routes';
 import flightRoutes, { adminFlightRoutes } from './FlightCtrl/flight.routes';
@@ -10,9 +12,10 @@ import bookingRoutes, { adminBookingRoutes } from './BookingCtrl/booking.routes'
 import paymentRoutes from './PaymentCtrl/payment.routes';
 import reportRoutes from './ReportCtrl/report.routes';
 
-dotenv.config();
-
 const app = express();
+
+// Trust proxy (required for Render, Cloud Run, etc.)
+app.set('trust proxy', 1);
 
 // Security headers
 app.use(helmet());
