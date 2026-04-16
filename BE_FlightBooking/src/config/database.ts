@@ -1,19 +1,11 @@
-import Database, { Database as DatabaseType } from 'better-sqlite3';
-import path from 'path';
-import fs from 'fs';
+import { createClient, SupabaseClient } from '@supabase/supabase-js';
 
-const dbPath = process.env.DB_PATH || path.join(process.cwd(), 'data', 'flight_booking.db');
+const supabaseUrl = process.env.SUPABASE_URL;
+const supabaseKey = process.env.SUPABASE_SECRET_KEY || process.env.SUPABASE_PUBLISHABLE_KEY;
 
-// Tự tạo thư mục data nếu chưa tồn tại
-const dbDir = path.dirname(dbPath);
-if (!fs.existsSync(dbDir)) {
-  fs.mkdirSync(dbDir, { recursive: true });
-}
+if (!supabaseUrl) throw new Error('Missing SUPABASE_URL environment variable');
+if (!supabaseKey) throw new Error('Missing SUPABASE_SECRET_KEY or SUPABASE_PUBLISHABLE_KEY environment variable');
 
-const db: DatabaseType = new Database(dbPath);
+const supabase: SupabaseClient = createClient(supabaseUrl, supabaseKey);
 
-// Enable WAL mode for better concurrent read performance
-db.pragma('journal_mode = WAL');
-db.pragma('foreign_keys = ON');
-
-export default db;
+export default supabase;

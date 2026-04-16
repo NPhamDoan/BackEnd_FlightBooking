@@ -1,48 +1,57 @@
 import { Request, Response, NextFunction } from 'express';
 import bcrypt from 'bcryptjs';
 import jwt from 'jsonwebtoken';
-import db from '../config/database';
+import supabase from '../config/database';
 import { AppError } from '../shared/utils/AppError';
 import { debugLog } from '../shared/utils/debug';
 import { RegisterRequest, LoginRequest, ChangePasswordRequest, UserProfile, JwtPayload } from './auth.types';
 
 const JWT_SECRET = process.env.JWT_SECRET || 'default-secret';
 
-export function register(req: Request, res: Response, next: NextFunction): void {
+export async function register(req: Request, res: Response, next: NextFunction): Promise<void> {
   try {
     const { email, password, fullName, phone } = req.body as RegisterRequest;
     debugLog('Auth', 'register - email:', email);
 
-    // Check duplicate email
-    const existing = db.prepare('SELECT id FROM users WHERE email = ?').get(email);
-    if (existing) {
-      debugLog('Auth', 'register - duplicate email:', email);
-      throw new AppError('Email đã được sử dụng', 409);
-    }
-
     // Hash password with bcrypt salt rounds 12
     const passwordHash = bcrypt.hashSync(password, 12);
 
-    // Insert user with role='customer'
-    const result = db.prepare(
-      'INSERT INTO users (email, password_hash, full_name, phone, role) VALUES (?, ?, ?, ?, ?)'
-    ).run(email, passwordHash, fullName, phone, 'customer');
+    // Insert user with role='customer', select back the created row
+    const { data, error } = await supabase
+      .from('users')
+      .insert({
+        email,
+        password_hash: passwordHash,
+        full_name: fullName,
+        phone,
+        role: 'customer',
+      })
+      .select('id, email, full_name, phone, role, created_at')
+      .single();
 
-    const insertId = Number(result.lastInsertRowid);
-    debugLog('Auth', 'register - success, userId:', insertId);
+    if (error) {
+      // Unique violation → 409 (duplicate email)
+      if (error.code === '23505') {
+        debugLog('Auth', 'register - duplicate email:', email);
+        throw new AppError('Email đã được sử dụng', 409);
+      }
+      throw new AppError(error.message, 500);
+    }
+
+    debugLog('Auth', 'register - success, userId:', data.id);
 
     // Build user profile
     const user: UserProfile = {
-      id: insertId,
-      email,
-      fullName,
-      phone,
-      role: 'customer',
-      createdAt: new Date(),
+      id: data.id,
+      email: data.email,
+      fullName: data.full_name,
+      phone: data.phone,
+      role: data.role,
+      createdAt: data.created_at,
     };
 
     // Create JWT token 24h
-    const payload: JwtPayload = { id: insertId, email, role: 'customer' };
+    const payload: JwtPayload = { id: data.id, email: data.email, role: data.role };
     const token = jwt.sign(payload, JWT_SECRET, { expiresIn: '24h' });
 
     res.status(201).json({ token, user });
@@ -51,17 +60,19 @@ export function register(req: Request, res: Response, next: NextFunction): void 
   }
 }
 
-export function login(req: Request, res: Response, next: NextFunction): void {
+export async function login(req: Request, res: Response, next: NextFunction): Promise<void> {
   try {
     const { email, password } = req.body as LoginRequest;
     debugLog('Auth', 'login - email:', email);
 
     // Select user by email
-    const row = db.prepare(
-      'SELECT id, email, password_hash, full_name, phone, role, created_at FROM users WHERE email = ?'
-    ).get(email) as any;
+    const { data: row, error } = await supabase
+      .from('users')
+      .select('id, email, password_hash, full_name, phone, role, created_at')
+      .eq('email', email)
+      .single();
 
-    if (!row) {
+    if (error || !row) {
       debugLog('Auth', 'login - email not found:', email);
       throw new AppError('Email hoặc mật khẩu không đúng', 401);
     }
@@ -95,16 +106,18 @@ export function login(req: Request, res: Response, next: NextFunction): void {
   }
 }
 
-export function getProfile(req: Request, res: Response, next: NextFunction): void {
+export async function getProfile(req: Request, res: Response, next: NextFunction): Promise<void> {
   try {
     const userId = req.user!.id;
     debugLog('Auth', 'getProfile - userId:', userId);
 
-    const row = db.prepare(
-      'SELECT id, email, full_name, phone, role, created_at FROM users WHERE id = ?'
-    ).get(userId) as any;
+    const { data: row, error } = await supabase
+      .from('users')
+      .select('id, email, full_name, phone, role, created_at')
+      .eq('id', userId)
+      .single();
 
-    if (!row) {
+    if (error || !row) {
       debugLog('Auth', 'getProfile - user not found:', userId);
       throw new AppError('Người dùng không tồn tại', 404);
     }
@@ -124,15 +137,20 @@ export function getProfile(req: Request, res: Response, next: NextFunction): voi
   }
 }
 
-export function changePassword(req: Request, res: Response, next: NextFunction): void {
+export async function changePassword(req: Request, res: Response, next: NextFunction): Promise<void> {
   try {
     const userId = req.user!.id;
     const { currentPassword, newPassword } = req.body as ChangePasswordRequest;
     debugLog('Auth', 'changePassword - userId:', userId);
 
     // Get current user
-    const row = db.prepare('SELECT password_hash FROM users WHERE id = ?').get(userId) as any;
-    if (!row) {
+    const { data: row, error } = await supabase
+      .from('users')
+      .select('password_hash')
+      .eq('id', userId)
+      .single();
+
+    if (error || !row) {
       debugLog('Auth', 'changePassword - user not found:', userId);
       throw new AppError('Người dùng không tồn tại', 404);
     }
@@ -146,7 +164,14 @@ export function changePassword(req: Request, res: Response, next: NextFunction):
 
     // Hash and update new password
     const newHash = bcrypt.hashSync(newPassword, 12);
-    db.prepare('UPDATE users SET password_hash = ?, updated_at = CURRENT_TIMESTAMP WHERE id = ?').run(newHash, userId);
+    const { error: updateError } = await supabase
+      .from('users')
+      .update({ password_hash: newHash })
+      .eq('id', userId);
+
+    if (updateError) {
+      throw new AppError(updateError.message, 500);
+    }
 
     debugLog('Auth', 'changePassword - success, userId:', userId);
     res.status(200).json({ message: 'Đổi mật khẩu thành công' });

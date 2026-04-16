@@ -1,5 +1,5 @@
 import { Request, Response, NextFunction } from 'express';
-import db from '../config/database';
+import supabase from '../config/database';
 import { AppError } from '../shared/utils/AppError';
 import {
   FlightSearchQuery,
@@ -10,15 +10,7 @@ import {
 } from './flight.types';
 import { PaginatedResult } from '../shared/types/common.types';
 
-const SORT_BY_MAP: Record<string, string> = {
-  price: 'f.base_price',
-  departure_time: 'f.departure_time',
-  duration: "julianday(f.arrival_time) - julianday(f.departure_time)",
-};
-
-const COLUMNS = ['A', 'B', 'C', 'D', 'E', 'F'];
-
-export function searchFlights(req: Request, res: Response, next: NextFunction): void {
+export async function searchFlights(req: Request, res: Response, next: NextFunction): Promise<void> {
   try {
     const query = req.query as unknown as FlightSearchQuery;
     console.log('[Flight] searchFlights - departure:', query.departure, 'arrival:', query.arrival, 'date:', query.departureDate);
@@ -26,54 +18,91 @@ export function searchFlights(req: Request, res: Response, next: NextFunction): 
     const limit = Number(query.limit) || 20;
     const offset = (page - 1) * limit;
 
-    const conditions: string[] = [
-      "f.status = 'scheduled'",
-      'dep.code = ?',
-      'arr.code = ?',
-      'DATE(f.departure_time) = ?',
-    ];
-    const params: (string | number)[] = [query.departure, query.arrival, query.departureDate];
+    // Build Supabase query with embedded relations
+    let dbQuery = supabase
+      .from('flights')
+      .select(`
+        *,
+        airlines!inner(name, code),
+        departure_airport:airports!departure_airport_id!inner(name, code, city),
+        arrival_airport:airports!arrival_airport_id!inner(name, code, city),
+        seats!left(id, status)
+      `, { count: 'exact' })
+      .eq('status', 'scheduled')
+      .eq('departure_airport.code', query.departure)
+      .eq('arrival_airport.code', query.arrival)
+      .gte('departure_time', `${query.departureDate}T00:00:00`)
+      .lt('departure_time', `${query.departureDate}T23:59:59.999`);
 
     if (query.airline) {
-      conditions.push('a.code = ?');
-      params.push(query.airline);
+      dbQuery = dbQuery.eq('airlines.code', query.airline);
     }
     if (query.minPrice !== undefined && query.minPrice !== null) {
-      conditions.push('f.base_price >= ?');
-      params.push(Number(query.minPrice));
+      dbQuery = dbQuery.gte('base_price', Number(query.minPrice));
     }
     if (query.maxPrice !== undefined && query.maxPrice !== null) {
-      conditions.push('f.base_price <= ?');
-      params.push(Number(query.maxPrice));
+      dbQuery = dbQuery.lte('base_price', Number(query.maxPrice));
     }
 
-    const sqlWhere = conditions.join(' AND ');
-    const orderBy = SORT_BY_MAP[query.sortBy ?? 'departure_time'] ?? SORT_BY_MAP['departure_time'];
+    // Apply sort and pagination
+    // For 'duration' sort, we cannot use Supabase query builder directly
+    // so we handle it differently
+    const sortBy = query.sortBy ?? 'departure_time';
 
-    const flights = db.prepare(`
-      SELECT f.*, a.name AS airline_name, a.code AS airline_code,
-             dep.name AS departure_airport_name, dep.code AS departure_airport_code, dep.city AS departure_airport_city,
-             arr.name AS arrival_airport_name, arr.code AS arrival_airport_code, arr.city AS arrival_airport_city,
-             (SELECT COUNT(*) FROM seats s WHERE s.flight_id = f.id AND s.status = 'available') AS available_seats
-      FROM flights f
-      JOIN airlines a ON f.airline_id = a.id
-      JOIN airports dep ON f.departure_airport_id = dep.id
-      JOIN airports arr ON f.arrival_airport_id = arr.id
-      WHERE ${sqlWhere}
-      ORDER BY ${orderBy} ASC
-      LIMIT ? OFFSET ?
-    `).all(...params, limit, offset) as FlightDetail[];
+    if (sortBy === 'price') {
+      dbQuery = dbQuery.order('base_price', { ascending: true });
+    } else if (sortBy === 'departure_time') {
+      dbQuery = dbQuery.order('departure_time', { ascending: true });
+    }
+    // For 'duration' sort, we skip server-side ordering and sort in JS after fetch
 
-    const countResult = db.prepare(`
-      SELECT COUNT(*) AS count
-      FROM flights f
-      JOIN airlines a ON f.airline_id = a.id
-      JOIN airports dep ON f.departure_airport_id = dep.id
-      JOIN airports arr ON f.arrival_airport_id = arr.id
-      WHERE ${sqlWhere}
-    `).get(...params) as { count: number };
+    if (sortBy !== 'duration') {
+      dbQuery = dbQuery.range(offset, offset + limit - 1);
+    }
 
-    const total = countResult.count;
+    const { data, error, count } = await dbQuery;
+
+    if (error) {
+      throw new AppError(error.message, 500);
+    }
+
+    // Map embedded relations to flat FlightDetail format
+    let flights: FlightDetail[] = (data || []).map((f: any) => ({
+      id: f.id,
+      airline_id: f.airline_id,
+      departure_airport_id: f.departure_airport_id,
+      arrival_airport_id: f.arrival_airport_id,
+      departure_time: f.departure_time,
+      arrival_time: f.arrival_time,
+      base_price: f.base_price,
+      total_seats: f.total_seats,
+      status: f.status,
+      created_at: f.created_at,
+      airline_name: f.airlines?.name ?? '',
+      airline_code: f.airlines?.code ?? '',
+      departure_airport_name: f.departure_airport?.name ?? '',
+      departure_airport_code: f.departure_airport?.code ?? '',
+      departure_airport_city: f.departure_airport?.city ?? '',
+      arrival_airport_name: f.arrival_airport?.name ?? '',
+      arrival_airport_code: f.arrival_airport?.code ?? '',
+      arrival_airport_city: f.arrival_airport?.city ?? '',
+      available_seats: Array.isArray(f.seats)
+        ? f.seats.filter((s: any) => s.status === 'available').length
+        : 0,
+    }));
+
+    let total = count ?? 0;
+
+    // Handle duration sort: sort in JS and paginate manually
+    if (sortBy === 'duration') {
+      flights.sort((a, b) => {
+        const durationA = new Date(a.arrival_time).getTime() - new Date(a.departure_time).getTime();
+        const durationB = new Date(b.arrival_time).getTime() - new Date(b.departure_time).getTime();
+        return durationA - durationB;
+      });
+      total = flights.length;
+      flights = flights.slice(offset, offset + limit);
+    }
 
     const result: PaginatedResult<FlightDetail> = {
       data: flights,
@@ -90,27 +119,59 @@ export function searchFlights(req: Request, res: Response, next: NextFunction): 
   }
 }
 
-export function getFlightById(req: Request, res: Response, next: NextFunction): void {
+export async function getFlightById(req: Request, res: Response, next: NextFunction): Promise<void> {
   try {
     const { id } = req.params;
     console.log('[Flight] getFlightById - id:', id);
 
-    const flight = db.prepare(`
-      SELECT f.*, a.name AS airline_name, a.code AS airline_code,
-             dep.name AS departure_airport_name, dep.code AS departure_airport_code, dep.city AS departure_airport_city,
-             arr.name AS arrival_airport_name, arr.code AS arrival_airport_code, arr.city AS arrival_airport_city,
-             (SELECT COUNT(*) FROM seats s WHERE s.flight_id = f.id AND s.status = 'available') AS available_seats
-      FROM flights f
-      JOIN airlines a ON f.airline_id = a.id
-      JOIN airports dep ON f.departure_airport_id = dep.id
-      JOIN airports arr ON f.arrival_airport_id = arr.id
-      WHERE f.id = ?
-    `).get(id) as FlightDetail | undefined;
+    const { data: f, error } = await supabase
+      .from('flights')
+      .select(`
+        *,
+        airlines(name, code),
+        departure_airport:airports!departure_airport_id(name, code, city),
+        arrival_airport:airports!arrival_airport_id(name, code, city),
+        seats!left(id, status)
+      `)
+      .eq('id', id)
+      .single();
 
-    if (!flight) {
+    if (error) {
+      if (error.code === 'PGRST116') {
+        console.log('[Flight] getFlightById - not found:', id);
+        throw new AppError('Chuyến bay không tồn tại', 404);
+      }
+      throw new AppError(error.message, 500);
+    }
+
+    if (!f) {
       console.log('[Flight] getFlightById - not found:', id);
       throw new AppError('Chuyến bay không tồn tại', 404);
     }
+
+    const flight: FlightDetail = {
+      id: f.id,
+      airline_id: f.airline_id,
+      departure_airport_id: f.departure_airport_id,
+      arrival_airport_id: f.arrival_airport_id,
+      departure_time: f.departure_time,
+      arrival_time: f.arrival_time,
+      base_price: f.base_price,
+      total_seats: f.total_seats,
+      status: f.status,
+      created_at: f.created_at,
+      airline_name: (f as any).airlines?.name ?? '',
+      airline_code: (f as any).airlines?.code ?? '',
+      departure_airport_name: (f as any).departure_airport?.name ?? '',
+      departure_airport_code: (f as any).departure_airport?.code ?? '',
+      departure_airport_city: (f as any).departure_airport?.city ?? '',
+      arrival_airport_name: (f as any).arrival_airport?.name ?? '',
+      arrival_airport_code: (f as any).arrival_airport?.code ?? '',
+      arrival_airport_city: (f as any).arrival_airport?.city ?? '',
+      available_seats: Array.isArray((f as any).seats)
+        ? (f as any).seats.filter((s: any) => s.status === 'available').length
+        : 0,
+    };
 
     console.log('[Flight] getFlightById - found, available_seats:', flight.available_seats);
     res.status(200).json({ flight });
@@ -119,27 +180,42 @@ export function getFlightById(req: Request, res: Response, next: NextFunction): 
   }
 }
 
-export function getFlightSeats(req: Request, res: Response, next: NextFunction): void {
+export async function getFlightSeats(req: Request, res: Response, next: NextFunction): Promise<void> {
   try {
     const { id } = req.params;
     console.log('[Flight] getFlightSeats - flightId:', id);
 
-    const flight = db.prepare('SELECT id FROM flights WHERE id = ?').get(id);
-    if (!flight) {
+    // Check flight exists
+    const { data: flight, error: flightError } = await supabase
+      .from('flights')
+      .select('id')
+      .eq('id', id)
+      .single();
+
+    if (flightError || !flight) {
       console.log('[Flight] getFlightSeats - flight not found:', id);
       throw new AppError('Chuyến bay không tồn tại', 404);
     }
 
-    const seats = db.prepare('SELECT * FROM seats WHERE flight_id = ?').all(id) as Seat[];
+    const { data: seats, error } = await supabase
+      .from('seats')
+      .select('*')
+      .eq('flight_id', id);
 
-    console.log('[Flight] getFlightSeats - total seats:', seats.length, 'available:', seats.filter(s => s.status === 'available').length);
-    res.status(200).json({ seats });
+    if (error) {
+      throw new AppError(error.message, 500);
+    }
+
+    const seatList = (seats || []) as Seat[];
+
+    console.log('[Flight] getFlightSeats - total seats:', seatList.length, 'available:', seatList.filter(s => s.status === 'available').length);
+    res.status(200).json({ seats: seatList });
   } catch (error) {
     next(error);
   }
 }
 
-export function createFlight(req: Request, res: Response, next: NextFunction): void {
+export async function createFlight(req: Request, res: Response, next: NextFunction): Promise<void> {
   try {
     const data = req.body as CreateFlightRequest;
     console.log('[Flight] createFlight - airline:', data.airline_id, 'seats:', data.total_seats);
@@ -149,75 +225,40 @@ export function createFlight(req: Request, res: Response, next: NextFunction): v
       throw new AppError('Giờ khởi hành phải trước giờ đến', 400);
     }
 
-    const createFlightTrx = db.transaction(() => {
-      const result = db.prepare(
-        `INSERT INTO flights (airline_id, departure_airport_id, arrival_airport_id, departure_time, arrival_time, base_price, total_seats)
-         VALUES (?, ?, ?, ?, ?, ?, ?)`
-      ).run(
-        data.airline_id,
-        data.departure_airport_id,
-        data.arrival_airport_id,
-        data.departure_time,
-        data.arrival_time,
-        data.base_price,
-        data.total_seats,
-      );
-
-      const flightId = Number(result.lastInsertRowid);
-
-      // Generate seats: 20% first, 20% business, 60% economy
-      const totalSeats = data.total_seats;
-      const firstCount = Math.floor(totalSeats * 0.2);
-      const businessCount = Math.floor(totalSeats * 0.2);
-      const economyCount = totalSeats - firstCount - businessCount;
-
-      const seatClasses: { class: string; count: number; priceModifier: number }[] = [
-        { class: 'first', count: firstCount, priceModifier: 3.0 },
-        { class: 'business', count: businessCount, priceModifier: 2.0 },
-        { class: 'economy', count: economyCount, priceModifier: 1.0 },
-      ];
-
-      const insertSeat = db.prepare(
-        `INSERT INTO seats (flight_id, seat_number, class, status, price_modifier)
-         VALUES (?, ?, ?, 'available', ?)`
-      );
-
-      const seats: any[] = [];
-      let seatIndex = 0;
-
-      for (const sc of seatClasses) {
-        for (let i = 0; i < sc.count; i++) {
-          const row = Math.floor(seatIndex / COLUMNS.length) + 1;
-          const col = COLUMNS[seatIndex % COLUMNS.length];
-          const seatNumber = `${row}${col}`;
-
-          insertSeat.run(flightId, seatNumber, sc.class, sc.priceModifier);
-          seats.push({
-            flight_id: flightId,
-            seat_number: seatNumber,
-            class: sc.class,
-            status: 'available',
-            price_modifier: sc.priceModifier,
-          });
-          seatIndex++;
-        }
-      }
-
-      const flight = db.prepare('SELECT * FROM flights WHERE id = ?').get(flightId);
-
-      return { flight, seats };
+    const { data: rpcResult, error } = await supabase.rpc('create_flight_with_seats', {
+      p_airline_id: data.airline_id,
+      p_departure_airport_id: data.departure_airport_id,
+      p_arrival_airport_id: data.arrival_airport_id,
+      p_departure_time: data.departure_time,
+      p_arrival_time: data.arrival_time,
+      p_base_price: data.base_price,
+      p_total_seats: data.total_seats,
     });
 
-    const created = createFlightTrx();
+    if (error) {
+      // FK violation → invalid reference
+      if (error.code === '23503') {
+        throw new AppError('Tham chiếu không hợp lệ', 400);
+      }
+      throw new AppError(error.message, 500);
+    }
 
-    console.log('[Flight] createFlight - success, flightId:', (created.flight as any)?.id, 'seats:', created.seats.length);
-    res.status(201).json(created);
+    const flight = rpcResult?.flight;
+
+    // Fetch seats for the created flight
+    const { data: seats } = await supabase
+      .from('seats')
+      .select('*')
+      .eq('flight_id', flight?.id);
+
+    console.log('[Flight] createFlight - success, flightId:', flight?.id, 'seats:', (seats || []).length);
+    res.status(201).json({ flight, seats: seats || [] });
   } catch (error) {
     next(error);
   }
 }
 
-export function updateFlight(req: Request, res: Response, next: NextFunction): void {
+export async function updateFlight(req: Request, res: Response, next: NextFunction): Promise<void> {
   try {
     const { id } = req.params;
     const data = req.body as UpdateFlightRequest;
@@ -229,11 +270,13 @@ export function updateFlight(req: Request, res: Response, next: NextFunction): v
         throw new AppError('Giờ khởi hành phải trước giờ đến', 400);
       }
     } else if (data.departure_time || data.arrival_time) {
-      const existing = db.prepare('SELECT departure_time, arrival_time FROM flights WHERE id = ?').get(id) as
-        | { departure_time: string; arrival_time: string }
-        | undefined;
+      const { data: existing, error: fetchError } = await supabase
+        .from('flights')
+        .select('departure_time, arrival_time')
+        .eq('id', id)
+        .single();
 
-      if (!existing) {
+      if (fetchError || !existing) {
         throw new AppError('Chuyến bay không tồn tại', 404);
       }
 
@@ -245,7 +288,7 @@ export function updateFlight(req: Request, res: Response, next: NextFunction): v
       }
     }
 
-    // Build dynamic SET clause
+    // Build dynamic update fields
     const allowedFields: (keyof UpdateFlightRequest)[] = [
       'airline_id',
       'departure_airport_id',
@@ -256,45 +299,57 @@ export function updateFlight(req: Request, res: Response, next: NextFunction): v
       'total_seats',
     ];
 
-    const setClauses: string[] = [];
-    const setParams: (string | number)[] = [];
-
+    const updateData: Record<string, string | number> = {};
     for (const field of allowedFields) {
       if (data[field] !== undefined) {
-        setClauses.push(`${field} = ?`);
-        setParams.push(data[field] as string | number);
+        updateData[field] = data[field] as string | number;
       }
     }
 
-    if (setClauses.length === 0) {
+    if (Object.keys(updateData).length === 0) {
       throw new AppError('Không có trường nào để cập nhật', 400);
     }
 
-    const result = db.prepare(
-      `UPDATE flights SET ${setClauses.join(', ')} WHERE id = ?`
-    ).run(...setParams, id);
+    const { data: updated, error } = await supabase
+      .from('flights')
+      .update(updateData)
+      .eq('id', id)
+      .select();
 
-    if (result.changes === 0) {
+    if (error) {
+      if (error.code === '23503') {
+        throw new AppError('Tham chiếu không hợp lệ', 400);
+      }
+      throw new AppError(error.message, 500);
+    }
+
+    if (!updated || updated.length === 0) {
       throw new AppError('Chuyến bay không tồn tại', 404);
     }
 
-    const flight = db.prepare('SELECT * FROM flights WHERE id = ?').get(id);
-
     console.log('[Flight] updateFlight - success, id:', id);
-    res.status(200).json({ flight });
+    res.status(200).json({ flight: updated[0] });
   } catch (error) {
     next(error);
   }
 }
 
-export function deleteFlight(req: Request, res: Response, next: NextFunction): void {
+export async function deleteFlight(req: Request, res: Response, next: NextFunction): Promise<void> {
   try {
     const { id } = req.params;
     console.log('[Flight] deleteFlight - id:', id);
 
-    const result = db.prepare('DELETE FROM flights WHERE id = ?').run(id);
+    const { data, error } = await supabase
+      .from('flights')
+      .delete()
+      .eq('id', id)
+      .select();
 
-    if (result.changes === 0) {
+    if (error) {
+      throw new AppError(error.message, 500);
+    }
+
+    if (!data || data.length === 0) {
       console.log('[Flight] deleteFlight - not found:', id);
       throw new AppError('Chuyến bay không tồn tại', 404);
     }

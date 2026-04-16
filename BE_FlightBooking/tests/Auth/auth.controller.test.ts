@@ -3,19 +3,36 @@ import { AppError } from '../../src/shared/utils/AppError';
 
 // ── Mocks ────────────────────────────────────────────────────────────────────
 
-const mockGet = jest.fn();
-const mockRun = jest.fn();
-const mockAll = jest.fn();
+const mockSingle = jest.fn();
+const mockEq = jest.fn();
+const mockSelect = jest.fn();
+const mockInsert = jest.fn();
+const mockUpdate = jest.fn();
+
+const mockSupabase = {
+  from: jest.fn(() => ({
+    select: mockSelect,
+    insert: mockInsert,
+    update: mockUpdate,
+  })),
+};
+
+// Chain: .select().eq().single()
+mockSelect.mockReturnValue({ eq: mockEq });
+mockEq.mockReturnValue({ single: mockSingle });
+
+// Chain: .insert().select().single()
+const mockInsertSelectSingle = jest.fn();
+const mockInsertSelect = jest.fn(() => ({ single: mockInsertSelectSingle }));
+mockInsert.mockReturnValue({ select: mockInsertSelect });
+
+// Chain: .update().eq()
+const mockUpdateEq = jest.fn();
+mockUpdate.mockReturnValue({ eq: mockUpdateEq });
 
 jest.mock('../../src/config/database', () => ({
   __esModule: true,
-  default: {
-    prepare: jest.fn(() => ({
-      get: mockGet,
-      run: mockRun,
-      all: mockAll,
-    })),
-  },
+  default: mockSupabase,
 }));
 
 jest.mock('bcryptjs', () => ({
@@ -36,7 +53,6 @@ jest.mock('jsonwebtoken', () => ({
 
 import { register, login, getProfile, changePassword } from '../../src/Auth/auth.controller';
 import bcrypt from 'bcryptjs';
-import jwt from 'jsonwebtoken';
 
 // ── Helpers ──────────────────────────────────────────────────────────────────
 
@@ -66,6 +82,12 @@ function mockNext(): NextFunction {
 
 beforeEach(() => {
   jest.clearAllMocks();
+  // Reset default chain returns
+  mockSelect.mockReturnValue({ eq: mockEq });
+  mockEq.mockReturnValue({ single: mockSingle });
+  mockInsert.mockReturnValue({ select: mockInsertSelect });
+  mockInsertSelect.mockReturnValue({ single: mockInsertSelectSingle });
+  mockUpdate.mockReturnValue({ eq: mockUpdateEq });
 });
 
 // ═══════════════════════════════════════════════════════════════════════════════
@@ -80,15 +102,24 @@ describe('register', () => {
     phone: '0123456789',
   };
 
-  it('should return 201 with token and user on success', () => {
-    mockGet.mockReturnValueOnce(undefined); // no duplicate
-    mockRun.mockReturnValueOnce({ lastInsertRowid: 1 });
+  it('should return 201 with token and user on success', async () => {
+    mockInsertSelectSingle.mockResolvedValueOnce({
+      data: {
+        id: 1,
+        email: 'test@example.com',
+        full_name: 'Test User',
+        phone: '0123456789',
+        role: 'customer',
+        created_at: '2024-01-01T00:00:00Z',
+      },
+      error: null,
+    });
 
     const req = mockReq({ body: validBody });
     const res = mockRes();
     const next = mockNext();
 
-    register(req, res, next);
+    await register(req, res, next);
 
     expect(res.status).toHaveBeenCalledWith(201);
     expect(res.json).toHaveBeenCalledWith(
@@ -106,27 +137,32 @@ describe('register', () => {
     expect(next).not.toHaveBeenCalled();
   });
 
-  it('should call bcrypt.hashSync with salt rounds 12', () => {
-    mockGet.mockReturnValueOnce(undefined);
-    mockRun.mockReturnValueOnce({ lastInsertRowid: 1 });
+  it('should call bcrypt.hashSync with salt rounds 12', async () => {
+    mockInsertSelectSingle.mockResolvedValueOnce({
+      data: {
+        id: 1, email: 'test@example.com', full_name: 'Test User',
+        phone: '0123456789', role: 'customer', created_at: '2024-01-01T00:00:00Z',
+      },
+      error: null,
+    });
 
     const req = mockReq({ body: validBody });
-    const res = mockRes();
-    const next = mockNext();
-
-    register(req, res, next);
+    await register(req, mockRes(), mockNext());
 
     expect(bcrypt.hashSync).toHaveBeenCalledWith('Password1', 12);
   });
 
-  it('should return 409 via AppError when email is duplicate', () => {
-    mockGet.mockReturnValueOnce({ id: 99 }); // duplicate found
+  it('should return 409 via AppError when email is duplicate (23505)', async () => {
+    mockInsertSelectSingle.mockResolvedValueOnce({
+      data: null,
+      error: { code: '23505', message: 'duplicate key value' },
+    });
 
     const req = mockReq({ body: validBody });
     const res = mockRes();
     const next = mockNext();
 
-    register(req, res, next);
+    await register(req, res, next);
 
     expect(next).toHaveBeenCalledTimes(1);
     const error = (next as jest.Mock).mock.calls[0][0];
@@ -135,25 +171,21 @@ describe('register', () => {
     expect(res.status).not.toHaveBeenCalled();
   });
 
-  it('should hash the password before storing', () => {
-    mockGet.mockReturnValueOnce(undefined);
-    mockRun.mockReturnValueOnce({ lastInsertRowid: 1 });
+  it('should return 500 via AppError on unknown Supabase error', async () => {
+    mockInsertSelectSingle.mockResolvedValueOnce({
+      data: null,
+      error: { code: 'UNKNOWN', message: 'something went wrong' },
+    });
 
     const req = mockReq({ body: validBody });
-    const res = mockRes();
     const next = mockNext();
 
-    register(req, res, next);
+    await register(req, mockRes(), next);
 
-    // The hashed value should be passed to the INSERT, not the raw password
-    expect(bcrypt.hashSync).toHaveBeenCalled();
-    expect(mockRun).toHaveBeenCalledWith(
-      'test@example.com',
-      'hashed_password',
-      'Test User',
-      '0123456789',
-      'customer',
-    );
+    expect(next).toHaveBeenCalledTimes(1);
+    const error = (next as jest.Mock).mock.calls[0][0];
+    expect(error).toBeInstanceOf(AppError);
+    expect(error.statusCode).toBe(500);
   });
 });
 
@@ -171,18 +203,18 @@ describe('login', () => {
     full_name: 'Test User',
     phone: '0123456789',
     role: 'customer',
-    created_at: '2024-01-01',
+    created_at: '2024-01-01T00:00:00Z',
   };
 
-  it('should return 200 with token and user on success', () => {
-    mockGet.mockReturnValueOnce(dbRow);
+  it('should return 200 with token and user on success', async () => {
+    mockSingle.mockResolvedValueOnce({ data: dbRow, error: null });
     (bcrypt.compareSync as jest.Mock).mockReturnValueOnce(true);
 
     const req = mockReq({ body: validBody });
     const res = mockRes();
     const next = mockNext();
 
-    login(req, res, next);
+    await login(req, res, next);
 
     expect(res.status).toHaveBeenCalledWith(200);
     expect(res.json).toHaveBeenCalledWith(
@@ -199,14 +231,17 @@ describe('login', () => {
     expect(next).not.toHaveBeenCalled();
   });
 
-  it('should return 401 via AppError when email not found', () => {
-    mockGet.mockReturnValueOnce(undefined);
+  it('should return 401 via AppError when email not found', async () => {
+    mockSingle.mockResolvedValueOnce({
+      data: null,
+      error: { code: 'PGRST116', message: 'not found' },
+    });
 
     const req = mockReq({ body: validBody });
     const res = mockRes();
     const next = mockNext();
 
-    login(req, res, next);
+    await login(req, res, next);
 
     expect(next).toHaveBeenCalledTimes(1);
     const error = (next as jest.Mock).mock.calls[0][0];
@@ -214,15 +249,15 @@ describe('login', () => {
     expect(error.statusCode).toBe(401);
   });
 
-  it('should return 401 via AppError when password is wrong', () => {
-    mockGet.mockReturnValueOnce(dbRow);
+  it('should return 401 via AppError when password is wrong', async () => {
+    mockSingle.mockResolvedValueOnce({ data: dbRow, error: null });
     (bcrypt.compareSync as jest.Mock).mockReturnValueOnce(false);
 
     const req = mockReq({ body: validBody });
     const res = mockRes();
     const next = mockNext();
 
-    login(req, res, next);
+    await login(req, res, next);
 
     expect(next).toHaveBeenCalledTimes(1);
     const error = (next as jest.Mock).mock.calls[0][0];
@@ -230,21 +265,23 @@ describe('login', () => {
     expect(error.statusCode).toBe(401);
   });
 
-  it('should use the same error message for email-not-found and wrong-password', () => {
+  it('should use the same error message for email-not-found and wrong-password', async () => {
     // Email not found
-    mockGet.mockReturnValueOnce(undefined);
+    mockSingle.mockResolvedValueOnce({
+      data: null,
+      error: { code: 'PGRST116', message: 'not found' },
+    });
     const next1 = mockNext();
-    login(mockReq({ body: validBody }), mockRes(), next1);
+    await login(mockReq({ body: validBody }), mockRes(), next1);
     const err1 = (next1 as jest.Mock).mock.calls[0][0] as AppError;
 
     // Wrong password
-    mockGet.mockReturnValueOnce(dbRow);
+    mockSingle.mockResolvedValueOnce({ data: dbRow, error: null });
     (bcrypt.compareSync as jest.Mock).mockReturnValueOnce(false);
     const next2 = mockNext();
-    login(mockReq({ body: validBody }), mockRes(), next2);
+    await login(mockReq({ body: validBody }), mockRes(), next2);
     const err2 = (next2 as jest.Mock).mock.calls[0][0] as AppError;
 
-    // Both messages must be identical so the error doesn't reveal which field is wrong
     expect(err1.message).toBe(err2.message);
   });
 });
@@ -260,17 +297,17 @@ describe('getProfile', () => {
     full_name: 'Test User',
     phone: '0123456789',
     role: 'customer',
-    created_at: '2024-01-01',
+    created_at: '2024-01-01T00:00:00Z',
   };
 
-  it('should return 200 with user profile on success', () => {
-    mockGet.mockReturnValueOnce(dbRow);
+  it('should return 200 with user profile on success', async () => {
+    mockSingle.mockResolvedValueOnce({ data: dbRow, error: null });
 
     const req = mockReq({ user: { id: 1, email: 'test@example.com', role: 'customer' } });
     const res = mockRes();
     const next = mockNext();
 
-    getProfile(req, res, next);
+    await getProfile(req, res, next);
 
     expect(res.status).toHaveBeenCalledWith(200);
     expect(res.json).toHaveBeenCalledWith({
@@ -285,14 +322,17 @@ describe('getProfile', () => {
     expect(next).not.toHaveBeenCalled();
   });
 
-  it('should return 404 via AppError when user not found', () => {
-    mockGet.mockReturnValueOnce(undefined);
+  it('should return 404 via AppError when user not found', async () => {
+    mockSingle.mockResolvedValueOnce({
+      data: null,
+      error: { code: 'PGRST116', message: 'not found' },
+    });
 
     const req = mockReq({ user: { id: 999, email: 'ghost@example.com', role: 'customer' } });
     const res = mockRes();
     const next = mockNext();
 
-    getProfile(req, res, next);
+    await getProfile(req, res, next);
 
     expect(next).toHaveBeenCalledTimes(1);
     const error = (next as jest.Mock).mock.calls[0][0];
@@ -309,10 +349,10 @@ describe('getProfile', () => {
 describe('changePassword', () => {
   const body = { currentPassword: 'OldPass1', newPassword: 'NewPass1' };
 
-  it('should return 200 on success', () => {
-    mockGet.mockReturnValueOnce({ password_hash: 'old_hash' });
+  it('should return 200 on success', async () => {
+    mockSingle.mockResolvedValueOnce({ data: { password_hash: 'old_hash' }, error: null });
     (bcrypt.compareSync as jest.Mock).mockReturnValueOnce(true);
-    mockRun.mockReturnValueOnce({});
+    mockUpdateEq.mockResolvedValueOnce({ error: null });
 
     const req = mockReq({
       user: { id: 1, email: 'test@example.com', role: 'customer' },
@@ -321,7 +361,7 @@ describe('changePassword', () => {
     const res = mockRes();
     const next = mockNext();
 
-    changePassword(req, res, next);
+    await changePassword(req, res, next);
 
     expect(res.status).toHaveBeenCalledWith(200);
     expect(res.json).toHaveBeenCalledWith({ message: 'Đổi mật khẩu thành công' });
@@ -329,8 +369,8 @@ describe('changePassword', () => {
     expect(next).not.toHaveBeenCalled();
   });
 
-  it('should return 400 via AppError when current password is wrong', () => {
-    mockGet.mockReturnValueOnce({ password_hash: 'old_hash' });
+  it('should return 400 via AppError when current password is wrong', async () => {
+    mockSingle.mockResolvedValueOnce({ data: { password_hash: 'old_hash' }, error: null });
     (bcrypt.compareSync as jest.Mock).mockReturnValueOnce(false);
 
     const req = mockReq({
@@ -340,7 +380,7 @@ describe('changePassword', () => {
     const res = mockRes();
     const next = mockNext();
 
-    changePassword(req, res, next);
+    await changePassword(req, res, next);
 
     expect(next).toHaveBeenCalledTimes(1);
     const error = (next as jest.Mock).mock.calls[0][0];
@@ -349,8 +389,11 @@ describe('changePassword', () => {
     expect(res.status).not.toHaveBeenCalled();
   });
 
-  it('should return 404 via AppError when user not found', () => {
-    mockGet.mockReturnValueOnce(undefined);
+  it('should return 404 via AppError when user not found', async () => {
+    mockSingle.mockResolvedValueOnce({
+      data: null,
+      error: { code: 'PGRST116', message: 'not found' },
+    });
 
     const req = mockReq({
       user: { id: 999, email: 'ghost@example.com', role: 'customer' },
@@ -359,12 +402,31 @@ describe('changePassword', () => {
     const res = mockRes();
     const next = mockNext();
 
-    changePassword(req, res, next);
+    await changePassword(req, res, next);
 
     expect(next).toHaveBeenCalledTimes(1);
     const error = (next as jest.Mock).mock.calls[0][0];
     expect(error).toBeInstanceOf(AppError);
     expect(error.statusCode).toBe(404);
     expect(res.status).not.toHaveBeenCalled();
+  });
+
+  it('should return 500 via AppError when update fails', async () => {
+    mockSingle.mockResolvedValueOnce({ data: { password_hash: 'old_hash' }, error: null });
+    (bcrypt.compareSync as jest.Mock).mockReturnValueOnce(true);
+    mockUpdateEq.mockResolvedValueOnce({ error: { message: 'update failed' } });
+
+    const req = mockReq({
+      user: { id: 1, email: 'test@example.com', role: 'customer' },
+      body,
+    });
+    const next = mockNext();
+
+    await changePassword(req, mockRes(), next);
+
+    expect(next).toHaveBeenCalledTimes(1);
+    const error = (next as jest.Mock).mock.calls[0][0];
+    expect(error).toBeInstanceOf(AppError);
+    expect(error.statusCode).toBe(500);
   });
 });
